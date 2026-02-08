@@ -1,0 +1,42 @@
+# Data connector configuration
+# API endpoints, rate limits, and fallback settings
+
+ccxt:
+  default_exchange: binance
+  rate_limit_ms: 100
+  ohlcv_limit: 500          # Max bars per request
+  retry_attempts: 3
+  retry_delay_ms: 1000
+
+yfinance:
+  ohlcv_period: "2y"        # How far back to fetch
+  retry_attempts: 3
+
+fred:
+  api_key_env: "FRED_API_KEY"   # Optional: set env var for higher rate limits
+  base_url: "https://api.stlouisfed.org/fred"
+  series:
+    real_yields: "DFII10"
+
+sentiment:
+  fear_greed_url: "https://api.alternative.me/fng/"
+  fear_greed_limit: 30       # Days of history
+
+onchain:
+  # CoinGlass public endpoints (free tier)
+  coinglass_base: "https://open-api.coinglass.com/public/v2"
+  # Fallback: blockchain.info for basic BTC data
+  blockchain_info_base: "https://api.blockchain.info"
+
+# Data freshness rules (fail-safe)
+freshness:
+  max_age_minutes:
+    ohlcv_4h: 300            # 5 hours (one bar + buffer)
+    ohlcv_daily: 1500        # 25 hours
+    ohlcv_weekly: 10200      # 7 days + buffer
+    derivatives: 60          # 1 hour
+    onchain: 360             # 6 hours
+    sentiment: 720           # 12 hours
+    macro: 1500              # 25 hours
+  # If data is stale beyond max_age, default to CAUTION
+  stale_action: CAUTION

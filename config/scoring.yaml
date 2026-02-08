@@ -1,0 +1,88 @@
+# Scoring weights, thresholds, and veto rules
+# All magic numbers live here -- never hardcoded
+
+scoring:
+  # Score ranges per gate (section 9.2 of spec)
+  macro_range: [-3, 3]
+  flow_range: [-3, 3]
+  structure_range: [-3, 3]
+  phase_range: [-2, 2]
+  setup_range: [0, 3]
+
+  # Alert thresholds
+  long_threshold: 7
+  short_threshold: -7
+
+  # Size multipliers by tradeability
+  size_multipliers:
+    NORMAL: 1.0
+    CAUTION: 0.5
+    NO_TRADE: 0.0
+
+  # Positioning size multipliers
+  positioning_multipliers:
+    CLEAN: 1.0
+    WARM: 0.7
+    HOT: 0.5
+    EXTREME: 0.3
+
+macro_gate:
+  # Event risk windows (hours)
+  tier1_no_trade_before_hours: 48
+  tier1_no_trade_after_hours: 6
+  tier2_caution_before_hours: 24
+  tier2_caution_after_hours: 2
+
+  # Headline risk thresholds
+  headline_high_threshold: 20      # severity * credibility + market_reaction
+  headline_med_threshold: 12
+
+  # Sentiment extremes (Fear & Greed index 0-100)
+  fear_extreme_threshold: 15
+  greed_extreme_threshold: 85
+
+flow_gate:
+  # Z-score thresholds for crypto positioning
+  funding_extreme_pos: 2.5
+  funding_extreme_neg: -2.5
+  oi_elevated_z: 1.5
+  oi_extreme_z: 2.5
+  inflow_spike_z: 2.0
+
+  # Crowding state thresholds (composite)
+  crowding_warm: 1.0
+  crowding_hot: 2.0
+  crowding_extreme: 3.0
+
+  # Reserve slope (negative = outflows = bullish)
+  reserve_slope_bullish: -0.5
+  reserve_slope_bearish: 0.5
+
+  # Z-score lookback period (days)
+  zscore_lookback: 90
+
+structure_gate:
+  # Acceptance confirmation
+  acceptance_follow_through_bars: 3
+  acceptance_retest_buffer_atr: 0.3
+
+  # Zone parameters
+  zone_cluster_atr_multiplier: 1.0
+  zone_min_touches: 2
+  zone_strength_weights:
+    touches: 0.3
+    displacement: 0.3
+    time_separation: 0.2
+    recency: 0.2
+
+  # Trendline parameters
+  trendline_min_pivots: 2
+  trendline_max_residual_atr: 0.5
+
+  # Stage transition thresholds
+  stage_compression_atr_percentile: 25
+  stage_trend_hhhl_min_swings: 3
+
+  # Volatility regime percentiles
+  vol_low_percentile: 25
+  vol_high_percentile: 75

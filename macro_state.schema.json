@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MacroState",
+  "type": "object",
+  "required": [
+    "timestamp_utc",
+    "directional_regime",
+    "tradeability",
+    "size_multiplier",
+    "event_risk_state",
+    "headline_risk_state",
+    "sentiment_state",
+    "cross_asset_state",
+    "active_events",
+    "headline_flags"
+  ],
+  "properties": {
+    "timestamp_utc": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp"
+    },
+    "directional_regime": {
+      "type": "string",
+      "enum": [
+        "RISK_ON",
+        "MIXED",
+        "RISK_OFF"
+      ]
+    },
+    "tradeability": {
+      "type": "string",
+      "enum": [
+        "NORMAL",
+        "CAUTION",
+        "NO_TRADE"
+      ]
+    },
+    "size_multiplier": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "event_risk_state": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "ELEVATED",
+        "HIGH"
+      ]
+    },
+    "event_window": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "PRE",
+        "POST"
+      ]
+    },
+    "event_veto": {
+      "type": "boolean"
+    },
+    "headline_risk_state": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "ELEVATED",
+        "HIGH"
+      ]
+    },
+    "headline_risk_score": {
+      "type": "number"
+    },
+    "sentiment_state": {
+      "type": "string",
+      "enum": [
+        "RISK_SEEKING",
+        "NEUTRAL",
+        "RISK_AVERSE"
+      ]
+    },
+    "sentiment_extreme": {
+      "type": "string",
+      "enum": [
+        "FEAR_EXTREME",
+        "GREED_EXTREME",
+        "NONE"
+      ]
+    },
+    "cross_asset_state": {
+      "type": "string",
+      "enum": [
+        "CONFIRMS_RISK_ON",
+        "CONFIRMS_RISK_OFF",
+        "MIXED"
+      ]
+    },
+    "crypto_catalyst_state": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "ELEVATED",
+        "HIGH"
+      ]
+    },
+    "active_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "tier",
+          "time_to_event_hours"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "time_to_event_hours": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "headline_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "topic",
+          "severity",
+          "credibility",
+          "directional_bias"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "credibility": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "directional_bias": {
+            "type": "string",
+            "enum": [
+              "RISK_ON",
+              "RISK_OFF",
+              "AMBIGUOUS"
+            ]
+          },
+          "asset_impact": {
+            "type": "string"
+          },
+          "horizon": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

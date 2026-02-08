@@ -1,0 +1,76 @@
+# Per-asset configuration
+# Symbols, exchange mappings, and asset-class behaviour
+
+assets:
+  BTC:
+    class: crypto
+    tier: A           # On-chain + positioning (full signal set)
+    ccxt_symbol: "BTC/USDT"
+    ccxt_perp_symbol: "BTC/USDT:USDT"
+    exchange: binance
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 120
+    pivot_lookback: 5
+
+  ETH:
+    class: crypto
+    tier: A
+    ccxt_symbol: "ETH/USDT"
+    ccxt_perp_symbol: "ETH/USDT:USDT"
+    exchange: binance
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 120
+    pivot_lookback: 5
+
+  SOL:
+    class: crypto
+    tier: B           # Primarily derivatives + spot tape
+    ccxt_symbol: "SOL/USDT"
+    ccxt_perp_symbol: "SOL/USDT:USDT"
+    exchange: binance
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 100
+    pivot_lookback: 5
+
+  XRP:
+    class: crypto
+    tier: B
+    ccxt_symbol: "XRP/USDT"
+    ccxt_perp_symbol: "XRP/USDT:USDT"
+    exchange: binance
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 100
+    pivot_lookback: 5
+
+  XAU:
+    class: metals
+    tier: metals
+    yfinance_symbol: "GC=F"
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 120
+    pivot_lookback: 5
+
+  XAG:
+    class: metals
+    tier: metals
+    yfinance_symbol: "SI=F"
+    timeframes: [1w, 1d, 4h]
+    atr_period: 14
+    zone_lookback_bars: 100
+    pivot_lookback: 5
+
+# Macro proxy symbols
+macro_proxies:
+  DXY:
+    yfinance_symbol: "DX-Y.NYB"
+  TIPS_10Y:
+    fred_series: "DFII10"       # 10-Year Treasury Inflation-Indexed Security
+  SPX:
+    yfinance_symbol: "^GSPC"
+  VIX:
+    yfinance_symbol: "^VIX"
