@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from dss.storage.database import (
@@ -136,11 +137,11 @@ class Repository:
         return [self._position_to_dict(r) for r in rows]
 
     def get_position(self, pos_id: int) -> Optional[dict]:
-        row = self._session.query(PositionRecord).get(pos_id)
+        row = self._session.get(PositionRecord, pos_id)
         return self._position_to_dict(row) if row else None
 
     def update_position(self, pos_id: int, updates: dict):
-        row = self._session.query(PositionRecord).get(pos_id)
+        row = self._session.get(PositionRecord, pos_id)
         if not row:
             return
         for k, v in updates.items():
@@ -149,7 +150,7 @@ class Repository:
         self._session.commit()
 
     def close_position(self, pos_id: int, reason: str, realized_pnl_pct: float = 0.0):
-        row = self._session.query(PositionRecord).get(pos_id)
+        row = self._session.get(PositionRecord, pos_id)
         if not row:
             return
         row.status = "CLOSED"
@@ -226,19 +227,15 @@ class Repository:
             self._session.query(
                 OHLCVCache.asset,
                 OHLCVCache.timeframe,
-                OHLCVCache.fetched_at,
+                func.max(OHLCVCache.fetched_at).label("latest_fetched_at"),
             )
-            .distinct(OHLCVCache.asset, OHLCVCache.timeframe)
-            .order_by(
-                OHLCVCache.asset,
-                OHLCVCache.timeframe,
-                OHLCVCache.fetched_at.desc(),
-            )
+            .group_by(OHLCVCache.asset, OHLCVCache.timeframe)
+            .order_by(OHLCVCache.asset, OHLCVCache.timeframe)
             .all()
         )
         for r in rows:
             key = f"{r.asset}_{r.timeframe}"
-            result[key] = r.fetched_at.isoformat() if r.fetched_at else None
+            result[key] = r.latest_fetched_at.isoformat() if r.latest_fetched_at else None
         return result
 
     def close(self):

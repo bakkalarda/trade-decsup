@@ -87,6 +87,10 @@ def build_sr_zones(
         )
 
         # Determine if support or resistance relative to current price
+        # NOTE: This classification is re-evaluated at query time by
+        # find_nearest_zones(). Setting it here is a convenience default.
+        # We intentionally use the CURRENT price (last bar) which is valid
+        # because zones are rebuilt every eval bar with the growing window.
         current_price = float(df["close"].iloc[-1])
         is_support = ((zone_low + zone_high) / 2) < current_price
 
@@ -107,18 +111,23 @@ def build_sr_zones(
 def _calc_displacement(
     df: pd.DataFrame, zone_low: float, zone_high: float, touch_bars: list[int]
 ) -> float:
-    """Calculate average displacement (move away) after zone touches."""
+    """Calculate average displacement (move away) after zone touches.
+
+    Uses only bars that exist within the provided window — no lookahead
+    bias since the window grows as the backtest progresses.
+    """
     if not touch_bars:
         return 0.0
 
     displacements = []
     closes = df["close"].values
+    total_bars = len(closes)
     zone_mid = (zone_low + zone_high) / 2
 
     for bar in touch_bars:
-        # Look ahead 3-5 bars for displacement
-        ahead = min(bar + 5, len(closes))
-        if bar + 1 >= len(closes):
+        # Look ahead up to 5 bars for displacement (capped at available data)
+        ahead = min(bar + 5, total_bars)
+        if bar + 1 >= total_bars:
             continue
         max_move = 0.0
         for k in range(bar + 1, ahead):

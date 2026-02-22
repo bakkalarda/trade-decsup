@@ -1,0 +1,48 @@
+# Event calendar — recurring high-impact macro events
+# These cause a 24h veto window (configurable)
+#
+# Types:
+#   FOMC: Federal Reserve rate decision + statement
+#   CPI: US Consumer Price Index
+#   NFP: Non-Farm Payrolls
+#   OPEC: OPEC+ meetings (oil-sensitive)
+#   ECB: European Central Bank decisions
+#   BOJ: Bank of Japan decisions
+#   HALVING: Bitcoin halving (known dates)
+#
+# For backtesting: veto_hours defines the blackout window around the event.
+# For live: the system checks against this calendar + FRED API.
+
+event_veto_hours_before: 6    # Hours before event to start veto
+event_veto_hours_after: 2     # Hours after event to end veto
+
+# Recurring events (day-of-month patterns)
+# The system uses these as templates and matches against the backtest date range.
+recurring_events:
+  - name: "FOMC Decision"
+    type: FOMC
+    tier: 1
+    # FOMC meets ~8 times per year; dates are announced annually.
+    # For backtest: we check the 3rd Wednesday of Jan, Mar, May, Jun, Jul, Sep, Nov, Dec
+    months: [1, 3, 5, 6, 7, 9, 11, 12]
+    weekday: 2          # Wednesday (0=Mon)
+    week_of_month: 3    # 3rd week
+    hour_utc: 18        # 2pm ET
+
+  - name: "US CPI Release"
+    type: CPI
+    tier: 1
+    # CPI is released ~10th-14th of each month (2nd Tuesday/Wednesday)
+    months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    weekday: 2          # Wednesday
+    week_of_month: 2    # 2nd week
+    hour_utc: 12        # 8:30am ET
+
+  - name: "Non-Farm Payrolls"
+    type: NFP
+    tier: 1
+    # First Friday of each month
+    months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    weekday: 4          # Friday
+    week_of_month: 1    # 1st week
+    hour_utc: 12        # 8:30am ET

@@ -28,6 +28,26 @@ onchain:
   # Fallback: blockchain.info for basic BTC data
   blockchain_info_base: "https://api.blockchain.info"
 
+binance_futures:
+  base_url: "https://fapi.binance.com"
+  rate_limit_ms: 200
+  retry_attempts: 3
+  retry_delay_ms: 1000
+  endpoints:
+    top_ls_ratio: "/futures/data/topLongShortPositionRatio"
+    global_ls_ratio: "/futures/data/globalLongShortAccountRatio"
+    taker_ratio: "/futures/data/takerlongshortRatio"
+    liquidations: "/futures/data/allForceOrders"
+    oi_history: "/futures/data/openInterestHist"
+
+cryptopanic:
+  base_url: "https://cryptopanic.com/api/free/v1"
+  api_key_env: "CRYPTOPANIC_API_KEY"   # Optional: free registration for enhanced access
+  rate_limit_requests: 5              # 5 requests per minute (free tier)
+  rate_limit_window_s: 60
+  retry_attempts: 2
+  default_currencies: ["BTC", "ETH", "SOL"]
+
 # Data freshness rules (fail-safe)
 freshness:
   max_age_minutes:
@@ -38,5 +58,7 @@ freshness:
     onchain: 360             # 6 hours
     sentiment: 720           # 12 hours
     macro: 1500              # 25 hours
+    binance_futures: 30      # 30 minutes
+    news: 60                 # 1 hour
   # If data is stale beyond max_age, default to CAUTION
   stale_action: CAUTION

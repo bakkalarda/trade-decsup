@@ -13,6 +13,11 @@ class SetupType(str, Enum):
     PULLBACK = "A_PULLBACK"
     BREAKOUT_RETEST = "B_BREAKOUT_RETEST"
     WYCKOFF_TRAP = "C_WYCKOFF_TRAP"
+    MAMIS_TRANSITION = "D_MAMIS_TRANSITION"  # Legacy — no longer generated standalone
+    RANGE_TRADE = "E_RANGE_TRADE"
+    DIVERGENCE_REVERSAL = "F_DIVERGENCE_REVERSAL"
+    VOLUME_CLIMAX = "G_VOLUME_CLIMAX"
+    FIB_OTE = "H_FIB_OTE"
 
 
 class Direction(str, Enum):
@@ -60,6 +65,8 @@ class Setup(BaseModel):
     flow_score: float = 0.0
     structure_score: float = 0.0
     phase_score: float = 0.0
+    options_score: float = 0.0
+    mamis_score: float = 0.0
     total_score: float = 0.0
 
     # Vetoes

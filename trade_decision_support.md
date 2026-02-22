@@ -2,6 +2,8 @@
 Automated **macro + structure + (crypto) on-chain + positioning** confirmation engine for: **BTC, ETH, XRP, SOL, XAU, XAG**.  
 The DSS runs on a schedule, evaluates your rule-based strategy, and **alerts** when a trade candidate passes gates (and no veto triggers).
 
+**Architecture version: V8 — OTE-based entries with MAMIS/Wyckoff confirmation layers.**
+
 ---
 
 ## 1) Goals and non-goals
@@ -10,12 +12,13 @@ The DSS runs on a schedule, evaluates your rule-based strategy, and **alerts** w
 - Convert the discretionary playbook into a **repeatable, auditable** pipeline.
 - Produce **actionable alerts** (not auto-trading) with:
   - direction (long/short),
-  - setup type (Pullback / Breakout-Retest / Wyckoff Trap),
+  - setup type (A–H: Pullback / Breakout-Retest / Wyckoff Trap / Range Trade / Divergence / Volume Climax / Fib OTE),
   - entry zone + trigger conditions,
   - invalidation (stop logic),
   - targets,
-  - confidence score + reasons,
+  - confidence score + reasons (8-gate composite),
   - veto flags (why a candidate was rejected).
+- Provide **historical backtesting** with equity curves, walk-forward validation, and overfitting detection.
 
 ### Non-goals
 - No broker execution, no portfolio rebalancing, no “AI guessing”.
@@ -26,36 +29,51 @@ The DSS runs on a schedule, evaluates your rule-based strategy, and **alerts** w
 
 ## 2) Strategy recap (what the DSS automates)
 
-### 2.1 Gate model (must-pass)
-A trade candidate must pass **three gates** and avoid vetoes:
+### 2.1 Gate model (8-gate composite scoring)
+A trade candidate is scored across **eight gates** and must exceed the threshold with no vetoes:
 
-1. **Macro Regime Gate (weekly/daily)**
-   - Classifies environment as **Risk-On / Mixed / Risk-Off**.
-2. **Flow & Positioning Gate**
-   - Crypto: BTC/ETH on-chain + perps positioning; XRP/SOL primarily positioning + tape.
-   - Metals: USD + real yields (+ optional positioning proxies).
-3. **Technical/Psychology Gate**
-   - **Support/Resistance zones**, **trendlines/channels**, **Acceptance vs Rejection**
-   - **Stage (1–4)** + key **Wyckoff events** (Spring / UTAD / LPS / LPSY).
+1. **Macro Regime Gate** (±1.5, capped) — cross-asset regime, event risk, sentiment (dampened — macro lags)
+2. **Flow & Positioning Gate** (±3) — funding, OI, exchange flows, crowding, squeeze risk
+3. **Structure Gate** (±3) — trend alignment, zone quality, acceptance/rejection
+4. **Phase Gate** (±2) — Wyckoff stage alignment with setup type
+5. **Setup Quality** (0..+3) — R:R ratio, zone strength, cleanliness
+6. **Options Gate** (±2) — options market sentiment (crypto only)
+7. **MAMIS Gate** (±2) — MAMIS cycle phase confirmation (all setups)
+8. **MTF Confluence** (±1) — multi-timeframe SMA trend alignment
 
-### 2.2 Trade setups (the only patterns the DSS looks for)
-- **Setup A — Trend Pullback Continuation**
-- **Setup B — Breakout + Retest (acceptance confirmation)**
-- **Setup C — Wyckoff Trap Reversal (Spring / UTAD)**
+### 2.2 Trade setups (the patterns the DSS looks for)
+- **Setup A — Trend Pullback Continuation** (active)
+- **Setup B — Breakout + Retest** (currently vetoed — unprofitable in backtest)
+- **Setup C — Wyckoff Trap Reversal (Spring / UTAD)** (active)
+- **Setup D — MAMIS Transition** (legacy — removed as standalone; MAMIS is now a confirmation layer)
+- **Setup E — Range Trade** (active, LONG only)
+- **Setup F — RSI Divergence Reversal** (available)
+- **Setup G — Volume Climax Reversal** (available)
+- **Setup H — Fibonacci OTE** (defined, disabled as standalone entry)
 
 ### 2.3 Scoring + vetoes
-- Score layers (example):
-  - Macro: -2..+2
-  - Flow/positioning: -2..+2
-  - Structure/phase: -2..+2
+- Score gates (8 total):
+  - Macro: ±1.5 (capped, dampened at extremes)
+  - Flow/positioning: ±3
+  - Structure: ±3
+  - Phase/Wyckoff: ±2
   - Setup quality: 0..+3
+  - Options: ±2 (crypto only)
+  - MAMIS: ±2 (confirmation layer on all setups)
+  - MTF: ±1 (higher-timeframe trend confluence)
 - Alert threshold:
-  - Long: **score ≥ +5**
-  - Short: **score ≤ -5**
+  - Long: **score ≥ +6.5** (crypto); **≥ +4.6** (metals, ×0.71 scaling)
+  - Short: **score ≤ -6.5** (crypto); **≤ -4.6** (metals)
 - **Vetoes** override score (hard NO), e.g.:
+  - B_BREAKOUT_RETEST: fully vetoed (unprofitable in backtest)
+  - E_RANGE_TRADE SHORT: vetoed (historically unprofitable)
+  - E_RANGE_TRADE in RISK_OFF: vetoed (ranges break in panic)
+  - XAG: fully vetoed (12% WR, PF 0.08 — incompatible with system)
   - BTC/ETH: large exchange-inflow risk at HTF resistance for longs.
   - Funding/OI extremes that imply squeeze risk (shorting support with deeply negative funding).
   - XAU/XAG: buying breakout with rising real yields + strengthening USD.
+  - Counter-trend: shorts in confirmed uptrend, longs in confirmed downtrend (exempt: C_WYCKOFF_TRAP).
+  - Stage misalignment: shorts in Stage 2 without UTAD, longs in Stage 4 without Spring.
 
 ---
 
@@ -525,8 +543,15 @@ Examples:
 
 ## 8) Setup Detection and Execution Templates (Professional Swing)
 
-The DSS only alerts on three setup families. Each setup outputs a **trade plan** (trigger, stop, targets, and management rules).  
+The DSS detects eight setup families (A–H). Each setup outputs a **trade plan** (trigger, stop, targets, and management rules).  
 The agent must *not* invent new patterns; it should enforce discipline.
+
+**V8 Architecture Note:** MAMIS cycle phase and Wyckoff events are **confirmation layers** that boost quality on ALL OTE-based entries via the scorer (`mamis_score` ±2, `phase_score` ±2). They are not standalone entry triggers. D_MAMIS_TRANSITION has been removed as a standalone entry; Fibonacci OTE (`_fib_ote_confluence`) checks 61.8%–78.6% golden pocket retracement as an additional quality bonus.
+
+**Currently active:** A_PULLBACK, C_WYCKOFF_TRAP, E_RANGE_TRADE (LONG only).
+**Vetoed:** B_BREAKOUT_RETEST (unprofitable), E_RANGE_TRADE SHORT, XAG entirely.
+**Available:** F_DIVERGENCE_REVERSAL, G_VOLUME_CLIMAX.
+**Defined but disabled:** H_FIB_OTE (causes displacement in single-position-per-asset system).
 
 ---
 
@@ -610,6 +635,90 @@ The agent must *not* invent new patterns; it should enforce discipline.
 **Professional notes**
 - Traps are best when crowding is extreme (because the trap has fuel), but only if your entry is confirmed by reclaim/failure and macro tradeability is not compromised.
 
+---
+
+### 8.4 Setup D — MAMIS Transition (Legacy — Removed as Standalone)
+
+**V8 Status:** D_MAMIS_TRANSITION has been **removed as a standalone entry**. MAMIS cycle phase is now purely a confirmation layer that enriches all OTE-based entries via the scorer's `mamis_score` (±2). This prevents MAMIS from generating low-quality standalone trades while preserving its value as a quality signal.
+
+---
+
+### 8.5 Setup E — Range Trade (LONG Only)
+
+**When to look**
+- Stage 1 (accumulation) or Stage 3 (distribution) — sideways phases
+- Defined range with clear support/resistance boundaries
+- Macro tradeability not `NO_TRADE`
+
+**Location rules (must-have)**
+- Price at range support (for LONG) with at least 2 touches
+- Range must be established (minimum 3 tests of boundaries)
+
+**Trigger rules (4H)**
+- Rejection candle at range support + hold above support
+- Volume confirmation preferred
+
+**Stops**
+- Below range support with ATR buffer
+
+**Targets**
+- T1: range midpoint
+- T2: range resistance
+
+**Professional notes**
+- SHORT range trades are vetoed (historically unprofitable).
+- E_RANGE_TRADE is vetoed in RISK_OFF regimes (ranges break in panic).
+- Range trades want sideways structure — `structure_score` rewards `SIDEWAYS` trend for E setups.
+
+---
+
+### 8.6 Setup F — RSI Divergence Reversal
+
+**When to look**
+- Late Stage 4 / early Stage 1 (for longs) — markdown exhaustion
+- Late Stage 2 / early Stage 3 (for shorts) — markup exhaustion
+- Price at key S/R zone with RSI divergence
+
+**Trigger rules**
+- Bullish divergence: price makes lower low, RSI makes higher low
+- Bearish divergence: price makes higher high, RSI makes lower high
+- Must occur at a significant S/R zone
+
+**Professional notes**
+- Divergence alone is not enough — requires zone + phase alignment.
+- Best in exhausted trends where the divergence signals loss of momentum.
+
+---
+
+### 8.7 Setup G — Volume Climax Reversal
+
+**When to look**
+- Capitulation events (Stage 4 for longs) or blow-off tops (Stage 2 for shorts)
+- Extreme volume spike (>2σ above average) at key zone
+
+**Trigger rules**
+- Volume spike with rejection candle at S/R
+- Subsequent bar must confirm (close in direction of reversal)
+
+**Professional notes**
+- Volume climax without zone confluence is noise.
+- Best when combined with extreme crowding (squeeze fuel).
+
+---
+
+### 8.8 Setup H — Fibonacci OTE (Defined, Disabled as Standalone)
+
+**V8 Status:** H_FIB_OTE is defined in the enum with full detection logic but **disabled as a standalone entry**. Backtesting showed it causes trade displacement in a single-position-per-asset system (displaces profitable A/C/E trades). It is retained as a confirmation bonus via `_fib_ote_confluence` on other setups.
+
+**When to look (if re-enabled)**
+- Stage 2 (longs) or Stage 4 (shorts) — clearly trending phases
+- Price retraces to 61.8%–78.6% fibonacci golden pocket of the prior swing
+
+**Trigger rules**
+- Enter on rejection from the OTE zone
+- Swing must be >4 ATR in range
+- Price within ±0.5 ATR of the 61.8%–78.6% zone
+
 
 
 ## 9) Scoring, Vetoes, and Risk-Adjusted Decision (Professional)
@@ -622,29 +731,33 @@ The DSS uses **vetoes** as hard risk brakes and **scoring** as soft alignment.
 
 ---
 
-### 9.2 Score model (example, configurable)
+### 9.2 Score model (V8 — 8-gate composite)
 Compute:
 
-- `macro_score` (from Macro Gate): -3..+3  
-- `flow_score` (from Flow/Positioning): -3..+3  
-- `structure_score` (from Structure + Acceptance): -3..+3  
-- `phase_score` (Stage/Wyckoff alignment): -2..+2  
-- `setup_score` (quality + R:R + cleanliness): 0..+3  
+- `macro_score` (from Macro Gate): -1.5..+1.5 (capped, dampened at extremes)
+- `flow_score` (from Flow/Positioning): -3..+3
+- `structure_score` (from Structure + Acceptance): -3..+3
+- `phase_score` (Stage/Wyckoff alignment): -2..+2
+- `setup_score` (quality + R:R + cleanliness): 0..+3
+- `options_score` (Options sentiment, crypto only): -2..+2
+- `mamis_score` (MAMIS cycle phase confirmation): -2..+2
+- `mtf_score` (Multi-timeframe trend confluence): -1..+1
 
 Total:
-- `total_score = macro_score + flow_score + structure_score + phase_score + setup_score`
+- `total_score = macro_score + flow_score + structure_score + phase_score + setup_score + options_score + mamis_score + mtf_score`
 
 **Alert thresholds**
-- Long candidate: `total_score ≥ +7` and no veto
-- Short candidate: `total_score ≤ -7` and no veto
+- Long candidate: `total_score ≥ +6.5` and no veto (crypto)
+- Short candidate: `total_score ≤ -6.5` and no veto (crypto)
+- Metals: thresholds scaled by ×0.71 → effective ±4.6 (compensates for missing flow + options gates)
 
-> Pro note: Higher threshold reduces trade frequency but improves survival and reduces noise.
+> Pro note: Macro score is capped at ±1.5 because macro data is lagging and inversely correlated with short-term crypto moves. Extreme readings (|raw| > 2.0) are faded by 40%.
 
 ---
 
 ### 9.3 Professional veto catalogue (must-pass)
 **Macro vetoes** (from Macro Gate)
-- Tier‑1 event window active (unless post-event acceptance setup)
+- Tier-1 event window active (unless post-event acceptance setup)
 - High headline risk (geo/systemic/regulatory) above threshold
 
 **Flow/positioning vetoes**
@@ -656,6 +769,19 @@ Total:
 **Structure vetoes**
 - Middle-of-range trades without acceptance/rejection event
 - First-break trades without retest (unless explicitly allowed in config)
+- Shorts in Stage 2 without UTAD/distribution confirmation
+- Longs in Stage 4 without Spring/capitulation confirmation
+
+**Counter-trend vetoes**
+- Shorts in confirmed uptrend (trend UP, confidence ≥60%) — exempt: C_WYCKOFF_TRAP
+- Longs in confirmed downtrend (trend DOWN, confidence ≥70%) — exempt: C_WYCKOFF_TRAP
+
+**Regime/setup vetoes (V8)**
+- B_BREAKOUT_RETEST: fully vetoed (backtest unprofitable)
+- D_MAMIS_TRANSITION: removed as standalone (MAMIS is confirmation only)
+- E_RANGE_TRADE SHORT: vetoed (historically unprofitable)
+- E_RANGE_TRADE in RISK_OFF: vetoed (ranges break in high-volatility regimes)
+- XAG (Silver): fully vetoed (12% WR, PF 0.08 — incompatible with system)
 
 ---
 

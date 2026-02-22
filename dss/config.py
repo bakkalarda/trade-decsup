@@ -68,8 +68,10 @@ class ScoringConfig(BaseModel):
     structure_range: list[int] = [-3, 3]
     phase_range: list[int] = [-2, 2]
     setup_range: list[int] = [0, 3]
-    long_threshold: int = 7
-    short_threshold: int = -7
+    options_range: list[int] = [-2, 2]
+    mamis_range: list[int] = [-2, 2]
+    long_threshold: float = 6
+    short_threshold: float = -6
     size_multipliers: dict[str, float] = Field(
         default_factory=lambda: {"NORMAL": 1.0, "CAUTION": 0.5, "NO_TRADE": 0.0}
     )

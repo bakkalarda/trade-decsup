@@ -5,10 +5,16 @@ Only the events that matter for swing trading:
 - UT/UTAD: sweep above range resistance -> close back inside -> LPSY retest fails
 - SOS/LPS: strength + backing-up -> buy the LPS retest
 - SOW/LPSY: weakness + last supply -> short the LPSY retest
+
+Volume confirmation:
+- Springs: volume dry-up *before* the sweep, then expansion on the recovery
+- UTAD: same pattern in reverse
+- LPS/LPSY: declining volume on the retest confirms exhaustion
 """
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from dss.models.structure_state import SwingPivot, SRZone
@@ -46,6 +52,11 @@ def detect_wyckoff_events(
     highs = df["high"].values
     current_price = float(closes[-1])
 
+    # Volume data (optional but improves confidence)
+    has_volume = "volume" in df.columns
+    volumes = df["volume"].values if has_volume else None
+    avg_vol_20 = float(np.mean(volumes[-25:-5])) if has_volume and len(volumes) >= 25 else 0.0
+
     # Find range boundaries from zones
     support_zones = [z for z in zones if z.is_support]
     resistance_zones = [z for z in zones if not z.is_support]
@@ -70,11 +81,36 @@ def detect_wyckoff_events(
                 holds = all(c > key_support.low for c in bars_after) if len(bars_after) > 0 else True
 
                 if holds:
+                    base_conf = 0.7
+                    vol_desc = ""
+
+                    # Volume confirmation: dry-up before sweep, expansion on recovery
+                    if has_volume and avg_vol_20 > 0 and i >= 3:
+                        pre_sweep_vol = float(np.mean(volumes[max(0, i - 3):i]))
+                        sweep_vol = float(volumes[i])
+                        recovery_vol = float(np.mean(volumes[i + 1:min(i + 3, len(volumes))])) if i + 1 < len(volumes) else 0
+
+                        dryup = pre_sweep_vol < avg_vol_20 * 0.7
+                        expansion = sweep_vol > avg_vol_20 * 1.2 or recovery_vol > avg_vol_20 * 1.2
+
+                        if dryup and expansion:
+                            base_conf = 0.9
+                            vol_desc = " | Vol: dry-up then expansion (textbook)"
+                        elif expansion:
+                            base_conf = 0.8
+                            vol_desc = " | Vol: expansion on recovery"
+                        elif dryup:
+                            base_conf = 0.75
+                            vol_desc = " | Vol: dry-up (needs expansion confirmation)"
+                        else:
+                            base_conf = 0.55
+                            vol_desc = " | Vol: no confirmation"
+
                     result["event"] = "SPRING"
-                    result["confidence"] = 0.7
+                    result["confidence"] = base_conf
                     result["description"] = (
                         f"Spring: swept below support {key_support.low:.2f}, "
-                        f"closed back above at bar {i}"
+                        f"closed back above at bar {i}{vol_desc}"
                     )
                     # Phase alignment: springs are best in Stage 1 (accumulation)
                     if current_stage in (1, 4):
@@ -95,11 +131,36 @@ def detect_wyckoff_events(
                 fails = all(c < key_resistance.high for c in bars_after) if len(bars_after) > 0 else True
 
                 if fails:
+                    base_conf = 0.7
+                    vol_desc = ""
+
+                    # Volume confirmation: heavy volume on sweep (exhaustion), then dry-up
+                    if has_volume and avg_vol_20 > 0 and i >= 3:
+                        pre_sweep_vol = float(np.mean(volumes[max(0, i - 3):i]))
+                        sweep_vol = float(volumes[i])
+                        post_vol = float(np.mean(volumes[i + 1:min(i + 3, len(volumes))])) if i + 1 < len(volumes) else 0
+
+                        exhaustion = sweep_vol > avg_vol_20 * 1.5
+                        post_dryup = post_vol < avg_vol_20 * 0.8
+
+                        if exhaustion and post_dryup:
+                            base_conf = 0.9
+                            vol_desc = " | Vol: exhaustion spike then dry-up (textbook)"
+                        elif exhaustion:
+                            base_conf = 0.8
+                            vol_desc = " | Vol: exhaustion spike on sweep"
+                        elif post_dryup:
+                            base_conf = 0.75
+                            vol_desc = " | Vol: post-sweep dry-up"
+                        else:
+                            base_conf = 0.55
+                            vol_desc = " | Vol: no confirmation"
+
                     result["event"] = "UTAD"
-                    result["confidence"] = 0.7
+                    result["confidence"] = base_conf
                     result["description"] = (
                         f"UTAD: swept above resistance {key_resistance.high:.2f}, "
-                        f"closed back below at bar {i}"
+                        f"closed back below at bar {i}{vol_desc}"
                     )
                     if current_stage in (3, 2):
                         result["phase_alignment"] = "ALIGNED"

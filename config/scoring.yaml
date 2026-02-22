@@ -2,16 +2,21 @@
 # All magic numbers live here -- never hardcoded
 
 scoring:
-  # Score ranges per gate (section 9.2 of spec)
+  # Score ranges per gate
   macro_range: [-3, 3]
   flow_range: [-3, 3]
   structure_range: [-3, 3]
   phase_range: [-2, 2]
   setup_range: [0, 3]
+  options_range: [-2, 2]
+  mamis_range: [-2, 2]
 
-  # Alert thresholds
-  long_threshold: 7
-  short_threshold: -7
+  # Alert thresholds (6.5 base for crypto; metals get ×0.71 scaling
+  # at runtime to compensate for missing flow + options gates).
+  # v8-final: restored to 6.5 from experiments at 5.5/6.0.
+  # MAMIS/Wyckoff are confirmation layers via scorer, not entry triggers.
+  long_threshold: 6.5
+  short_threshold: -6.5
 
   # Size multipliers by tradeability
   size_multipliers:

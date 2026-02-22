@@ -29,7 +29,15 @@ def make_decisions(
         direction = setup.get("direction", "LONG")
         total = setup.get("total_score", 0.0)
         vetoed = setup.get("vetoed", False)
-        threshold = cfg.scoring.long_threshold if direction == "LONG" else -cfg.scoring.short_threshold
+        base_threshold = cfg.scoring.long_threshold if direction == "LONG" else abs(cfg.scoring.short_threshold)
+        # Metals lack flow (±3) and options (±2) gates → scale threshold
+        # to ~71% of crypto capacity (12.5/17.5)
+        asset_name = setup.get("asset", "")
+        asset_cfg = cfg.assets.get(asset_name)
+        if asset_cfg and asset_cfg.asset_class == "metals":
+            threshold = base_threshold * 0.71
+        else:
+            threshold = base_threshold
 
         # For shorts, score is negative; compare absolute values
         passes_threshold = False
@@ -83,6 +91,8 @@ def _identify_weakest_gate(setup: dict) -> str:
         "flow": abs(setup.get("flow_score", 0)),
         "structure": abs(setup.get("structure_score", 0)),
         "phase": abs(setup.get("phase_score", 0)),
+        "options": abs(setup.get("options_score", 0)),
+        "mamis": abs(setup.get("mamis_score", 0)),
     }
     if setup.get("vetoed"):
         reasons = setup.get("veto_reasons", [])

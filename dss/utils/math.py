@@ -70,6 +70,65 @@ def impulse(series: pd.Series, window: int = 5) -> pd.Series:
     return series.diff(window)
 
 
+def rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """Wilder RSI (Relative Strength Index), 0-100."""
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100.0 - (100.0 / (1.0 + rs))
+
+
+def rsi_divergence(
+    close: pd.Series,
+    rsi_series: pd.Series,
+    lookback: int = 30,
+) -> str:
+    """Detect RSI divergence over the last *lookback* bars.
+
+    Bullish divergence: price makes lower low, RSI makes higher low.
+    Bearish divergence: price makes higher high, RSI makes lower high.
+
+    Returns: 'BULLISH', 'BEARISH', or 'NONE'.
+    """
+    if len(close) < lookback or len(rsi_series) < lookback:
+        return "NONE"
+
+    c = close.values[-lookback:]
+    r = rsi_series.values[-lookback:]
+
+    # Remove NaN
+    mask = ~(np.isnan(c) | np.isnan(r))
+    c, r = c[mask], r[mask]
+    if len(c) < 10:
+        return "NONE"
+
+    half = len(c) // 2
+
+    # Compare first-half vs second-half extremes
+    price_low_1 = np.min(c[:half])
+    price_low_2 = np.min(c[half:])
+    rsi_low_1 = np.min(r[:half])
+    rsi_low_2 = np.min(r[half:])
+
+    price_high_1 = np.max(c[:half])
+    price_high_2 = np.max(c[half:])
+    rsi_high_1 = np.max(r[:half])
+    rsi_high_2 = np.max(r[half:])
+
+    # Bullish: price lower low + RSI higher low
+    if price_low_2 < price_low_1 * 0.998 and rsi_low_2 > rsi_low_1 + 2:
+        return "BULLISH"
+
+    # Bearish: price higher high + RSI lower high
+    if price_high_2 > price_high_1 * 1.002 and rsi_high_2 < rsi_high_1 - 2:
+        return "BEARISH"
+
+    return "NONE"
+
+
 def clamp(value: float, lo: float, hi: float) -> float:
     """Clamp a value to [lo, hi]."""
     return max(lo, min(hi, value))

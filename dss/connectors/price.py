@@ -122,7 +122,7 @@ class TraditionalConnector(BaseConnector):
             # Estimate start date from limit and timeframe
             days_map = {"1w": limit * 7, "1d": limit, "4h": limit // 6 + 1, "1h": limit // 24 + 1}
             days_back = days_map.get(timeframe, limit)
-            start_dt = datetime.now(timezone.utc) - timedelta(days=min(days_back, 730))
+            start_dt = datetime.now(timezone.utc) - timedelta(days=min(days_back, 3650))
             start_str = start_dt.strftime("%Y-%m-%d")
             end_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 

@@ -2,7 +2,7 @@
 
 Multi-asset swing trading decision support engine for **BTC, ETH, XRP, SOL, XAU, XAG**.
 
-Runs 24/7 via [OpenClaw](https://docs.clawd.bot/) agent with Telegram interface. The system evaluates a rule-based strategy through three gates (Macro, Flow, Structure), detects setups (Pullback, Breakout+Retest, Wyckoff Trap), scores them, and alerts when a trade candidate passes all gates.
+Runs 24/7 via [OpenClaw](https://docs.clawd.bot/) agent with Telegram interface. The system evaluates a rule-based strategy through an 8-gate scoring engine, detects OTE-based setups (8 types: Pullback, Wyckoff Trap, Range Trade, Divergence Reversal, Volume Climax, and more), scores them with MAMIS/Wyckoff confirmations, and alerts when a trade candidate passes all gates.
 
 **This is a decision-support tool, not auto-trading software. The human places all orders.**
 
@@ -17,15 +17,36 @@ OpenClaw Gateway (always-on)          Python DSS Engine (CLI)
 │  Cron Scheduler           │         │  ┌──────────────────┐   │
 │  Web Search (headlines)   │←──JSON──│  │ Connectors       │   │
 │  Agent Memory             │         │  │ Features         │   │
-│  Session Management       │         │  │ Gates            │   │
+│  Session Management       │         │  │ Gates (8-gate)   │   │
 └──────────────────────────┘          │  │ Scoring + Vetoes │   │
+                                      │  │ Backtest Engine  │   │
                                       │  └──────────────────┘   │
                                       │  SQLite (audit + cache) │
                                       └─────────────────────────┘
 ```
 
 **OpenClaw** handles: Telegram, scheduling, LLM conversation, headline monitoring, memory.
-**Python DSS** handles: deterministic analysis, data ingestion, scoring, veto logic.
+**Python DSS** handles: deterministic analysis, data ingestion, scoring, veto logic, backtesting.
+
+### V8 Architecture — OTE-Based Entries with Confirmation Layers
+
+The DSS uses an **Optimal Trade Entry (OTE)** philosophy:
+- **Entry triggers** are price-action setups at key levels (pullbacks, traps, range extremes)
+- **Confirmation layers** (MAMIS cycle phase, Wyckoff events, Fibonacci OTE) boost or penalize quality on ALL setups via the scorer — they are never standalone entry triggers
+- **8-gate composite scoring** evaluates every candidate across macro, flow, structure, phase, setup quality, options, MAMIS, and multi-timeframe confluence
+
+### Setup Types
+
+| Code | Name | Status | Description |
+|------|------|--------|-------------|
+| A | A_PULLBACK | **Active** | Trend pullback continuation at S/R in Stage 2/4 |
+| B | B_BREAKOUT_RETEST | Vetoed | Acceptance-based breakout retest |
+| C | C_WYCKOFF_TRAP | **Active** | Spring/UTAD reversal with strict stage gating |
+| D | D_MAMIS_TRANSITION | Legacy | Removed as standalone; MAMIS is confirmation only |
+| E | E_RANGE_TRADE | **Active** | Buy range low in defined range (LONG only) |
+| F | F_DIVERGENCE_REVERSAL | Available | RSI divergence reversal at S/R zones |
+| G | G_VOLUME_CLIMAX | Available | Volume exhaustion spike at key zone |
+| H | H_FIB_OTE | Defined | Fibonacci golden pocket retracement |
 
 ---
 
@@ -89,6 +110,13 @@ dss structure --asset BTC --timeframe 1d
 dss zones --asset BTC --timeframe 1w
 dss stage --asset BTC
 
+# Backtesting
+dss backtest --asset BTC --start 2024-01-01 --end 2025-06-01 --timeframe 4h --output table
+dss backtest --asset all --start 2024-01-01 --end 2025-06-01 --output json
+dss backtest --asset ETH --start 2024-06-01 --end 2025-06-01 --risk-pct 1.0 --html report.html
+dss walk-forward --asset BTC --start 2023-01-01 --train 6 --test 3 --step 3
+dss backtest-report --asset BTC --output table
+
 # Position management
 dss position add --asset BTC --direction long --entry 98500 --stop 96200 --t1 104000 --t2 110000
 dss position list
@@ -124,14 +152,17 @@ All thresholds and parameters live in `config/`:
 
 | Gate | Range | Description |
 |------|-------|-------------|
-| Macro | -3..+3 | Cross-asset regime + event risk + sentiment |
-| Flow | -3..+3 | Positioning, funding, OI, exchange flows |
+| Macro | ±1.5 (capped) | Cross-asset regime + event risk + sentiment (dampened — macro data lags) |
+| Flow | -3..+3 | Positioning, funding, OI, exchange flows, crowding/squeeze |
 | Structure | -3..+3 | Trend alignment, zone quality, acceptance |
 | Phase | -2..+2 | Stage/Wyckoff alignment with setup type |
 | Setup Quality | 0..+3 | R:R ratio, zone strength, setup cleanliness |
+| Options | -2..+2 | Options market sentiment (crypto only) |
+| MAMIS | -2..+2 | MAMIS cycle phase confirmation (all setups) |
+| MTF | -1..+1 | Multi-timeframe trend confluence (HTF SMA alignment) |
 
-**Long alert:** total >= +7 and no vetoes
-**Short alert:** total <= -7 and no vetoes
+**Long alert:** total ≥ +6.5 and no vetoes (crypto) / ≥ +4.6 (metals, ×0.71 scaling)
+**Short alert:** total ≤ −6.5 and no vetoes (crypto) / ≤ −4.6 (metals)
 
 ---
 
@@ -155,20 +186,27 @@ All thresholds and parameters live in `config/`:
 ```
 trade_decsup/
 ├── dss/                    Python DSS engine
-│   ├── cli.py              CLI entrypoint
+│   ├── cli.py              CLI entrypoint (scan, backtest, walk-forward, etc.)
 │   ├── config.py           Config loader
-│   ├── models/             Pydantic data models
-│   ├── connectors/         Data ingestion (ccxt, yfinance, FRED, etc.)
-│   ├── features/           Feature engineering (pivots, zones, trend, stage, Wyckoff)
+│   ├── models/             Pydantic data models (setup types A–H, positions, alerts)
+│   ├── connectors/         Data ingestion (ccxt, yfinance, FRED, sentiment, options)
+│   ├── features/           Feature engineering (pivots, zones, trend, stage, Wyckoff, MAMIS, trendlines)
 │   ├── gates/              Signal gates (macro, flow, structure)
-│   ├── engine/             Setup detection, scoring, vetoes, decisions
+│   ├── engine/             Setup detection (A–H), 8-gate scorer, vetoes, decisions
+│   ├── backtest/           Historical backtesting engine (replay, metrics, reports)
 │   ├── storage/            SQLite database + repository
-│   └── utils/              Math utilities (z-scores, ATR, etc.)
+│   └── utils/              Math utilities (z-scores, ATR, RSI, etc.)
 ├── openclaw/               OpenClaw workspace files
-│   ├── AGENTS.md           Trading rules + decision framework
-│   ├── SOUL.md             Professional trader persona
+│   ├── IDENTITY.md         Bot identity and introduction
+│   ├── USER.md             Trader profile and preferences
+│   ├── SOUL.md             Professional trader persona + OTE philosophy (customized)
+│   ├── BRAIN.md            Live working memory (current market state)
+│   ├── MEMORY.md           Long-term memory (performance history, lessons)
+│   ├── HEARTBEAT.md        Autonomous thinking loop checklist
+│   ├── CLIENTS.md          Client profile and service guidelines
+│   ├── PLAYBOOK.md         Decision frameworks (scoring, vetoes, position mgmt)
+│   ├── AGENTS.md           Trading rules + scan cycle workflow (V8)
 │   ├── TOOLS.md            DSS CLI reference for the agent
-│   ├── HEARTBEAT.md        Heartbeat checklist
 │   └── skills/trade-dss/   OpenClaw skill definition
 ├── config/                 YAML configuration files
 ├── setup_openclaw.sh       OpenClaw cron job installer

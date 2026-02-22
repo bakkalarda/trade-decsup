@@ -589,6 +589,288 @@ def data_export(
 
 
 # ---------------------------------------------------------------------------
+# Backtest commands
+# ---------------------------------------------------------------------------
+
+@app.command()
+def backtest(
+    asset: str = typer.Option(..., "--asset", "-a", help="Asset to backtest (BTC, ETH, etc.) or 'all'"),
+    timeframe: str = typer.Option("4h", "--timeframe", "-t"),
+    start: str = typer.Option(..., "--start", "-s", help="Start date (YYYY-MM-DD)"),
+    end: str = typer.Option(None, "--end", "-e", help="End date (YYYY-MM-DD), defaults to now"),
+    order_expiry: int = typer.Option(10, "--order-expiry", help="Bars before pending order expires"),
+    eval_interval: int = typer.Option(1, "--eval-interval", help="Run pipeline every N bars (1=every bar)"),
+    warmup: int = typer.Option(120, "--warmup", help="Warm-up bars for indicator calculation"),
+    risk_pct: float = typer.Option(1.0, "--risk-pct", help="Percent of equity risked per trade"),
+    partial_close: float = typer.Option(50.0, "--partial-close", help="Percent closed at T1"),
+    trail_atr: float = typer.Option(2.0, "--trail-atr", help="ATR multiplier for trailing stop"),
+    no_trail: bool = typer.Option(False, "--no-trail", help="Disable trailing stop"),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: json or table"),
+    html_report: str = typer.Option(None, "--html", help="Path to write HTML equity curve report"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Run a historical backtest through the full DSS pipeline."""
+    _setup_logging(verbose)
+
+    from dss.backtest import BacktestConfig
+    from dss.backtest.data_loader import load_backtest_data
+    from dss.backtest.replay import run_backtest
+    from dss.backtest.report import format_json_dict, print_report
+
+    cfg = get_config()
+
+    # Parse dates
+    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    end_dt = (
+        datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if end else datetime.now(timezone.utc)
+    )
+
+    assets_to_test = list(cfg.assets.keys()) if asset.lower() == "all" else [asset.upper()]
+    all_results = []
+
+    for a in assets_to_test:
+        if a not in cfg.assets:
+            console.print(f"[red]Unknown asset: {a}[/red]", highlight=False)
+            continue
+
+        bt_cfg = BacktestConfig(
+            asset=a,
+            timeframe=timeframe,
+            start=start_dt,
+            end=end_dt,
+            order_expiry_bars=order_expiry,
+            eval_interval=eval_interval,
+            warmup_bars=warmup,
+            risk_per_trade_pct=risk_pct,
+            partial_close_pct=partial_close,
+            enable_trailing=not no_trail,
+            trail_atr_mult=trail_atr,
+        )
+
+        # Load data
+        if output == "table":
+            console.print(f"\n[cyan]Loading data for {a} {timeframe}...[/cyan]", highlight=False)
+
+        bundle = load_backtest_data(a, timeframe, start_dt, end_dt, cfg, warmup)
+
+        if not bundle.is_valid:
+            err = {"asset": a, "error": "Insufficient data", "details": bundle.errors}
+            if output == "json":
+                all_results.append(err)
+            else:
+                console.print(f"[red]Insufficient data for {a}: {bundle.errors}[/red]", highlight=False)
+            continue
+
+        if output == "table":
+            console.print(
+                f"[green]Loaded {bundle.bars_loaded} bars. Running backtest...[/green]",
+                highlight=False,
+            )
+
+        # Run backtest
+        result = run_backtest(bundle, cfg, bt_cfg)
+
+        # Store result in state snapshots
+        try:
+            repo = Repository()
+            repo.save_state("backtest", format_json_dict(result), asset=a, timeframe=timeframe)
+            repo.close()
+        except Exception:
+            pass
+
+        if output == "json":
+            all_results.append(format_json_dict(result))
+        else:
+            print_report(result, console)
+
+        # Generate HTML report if requested
+        if html_report:
+            from dss.backtest.html_report import generate_html_report
+            html_path = html_report if len(assets_to_test) == 1 else f"{a}_{html_report}"
+            generate_html_report(result, output_path=html_path)
+            if output == "table":
+                console.print(f"[green]HTML report saved to {html_path}[/green]", highlight=False)
+
+    if output == "json":
+        if len(all_results) == 1:
+            _json_out(all_results[0])
+        else:
+            _json_out({"backtests": all_results})
+
+
+@app.command(name="backtest-report")
+def backtest_report_cmd(
+    asset: str = typer.Option(None, "--asset", "-a", help="Filter by asset"),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: json or table"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Display the most recent backtest results."""
+    _setup_logging(verbose)
+
+    repo = Repository()
+
+    if asset:
+        result = repo.get_latest_state("backtest", asset=asset.upper())
+    else:
+        result = repo.get_latest_state("backtest")
+
+    repo.close()
+
+    if not result:
+        if output == "json":
+            _json_out({"error": "No backtest results found"})
+        else:
+            console.print("[yellow]No backtest results found. Run 'dss backtest' first.[/yellow]")
+        return
+
+    if output == "json":
+        _json_out(result)
+    else:
+        # Reconstruct BacktestResult for Rich printing
+        try:
+            from dss.backtest import BacktestResult
+            from dss.backtest.report import print_report
+            bt_result = BacktestResult(**result)
+            print_report(bt_result, console)
+        except Exception as e:
+            # Fallback to raw JSON
+            console.print("[yellow]Could not render report, showing raw JSON:[/yellow]")
+            _json_out(result)
+
+
+@app.command(name="walk-forward")
+def walk_forward(
+    asset: str = typer.Option(..., "--asset", "-a", help="Asset to test"),
+    timeframe: str = typer.Option("4h", "--timeframe", "-t"),
+    start: str = typer.Option(..., "--start", "-s", help="Overall start date (YYYY-MM-DD)"),
+    end: str = typer.Option(None, "--end", "-e", help="Overall end date"),
+    train_months: int = typer.Option(6, "--train", help="Training window in months"),
+    test_months: int = typer.Option(3, "--test", help="Test window in months"),
+    step_months: int = typer.Option(3, "--step", help="Step size in months"),
+    warmup: int = typer.Option(120, "--warmup"),
+    risk_pct: float = typer.Option(1.0, "--risk-pct"),
+    output: str = typer.Option("table", "--output", "-o"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Walk-forward validation — split data into rolling train/test windows.
+
+    Runs backtests on successive out-of-sample windows to detect overfitting.
+    A healthy system shows consistent metrics across test windows.
+    """
+    _setup_logging(verbose)
+    from dateutil.relativedelta import relativedelta
+
+    from dss.backtest import BacktestConfig
+    from dss.backtest.data_loader import load_backtest_data
+    from dss.backtest.replay import run_backtest
+    from dss.backtest.report import format_json_dict
+
+    cfg = get_config()
+    a = asset.upper()
+
+    if a not in cfg.assets:
+        console.print(f"[red]Unknown asset: {a}[/red]")
+        return
+
+    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    end_dt = (
+        datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if end else datetime.now(timezone.utc)
+    )
+
+    window_results = []
+    cursor = start_dt
+
+    while True:
+        train_start = cursor
+        train_end = cursor + relativedelta(months=train_months)
+        test_start = train_end
+        test_end = test_start + relativedelta(months=test_months)
+
+        if test_end > end_dt:
+            break
+
+        if output == "table":
+            console.print(
+                f"\n[cyan]Window: train {train_start.date()} → {train_end.date()} | "
+                f"test {test_start.date()} → {test_end.date()}[/cyan]"
+            )
+
+        # Run backtest on the TEST window only (train window is for feature
+        # calculation warmup — the growing window in replay handles this).
+        bt_cfg = BacktestConfig(
+            asset=a,
+            timeframe=timeframe,
+            start=test_start,
+            end=test_end,
+            warmup_bars=warmup,
+            risk_per_trade_pct=risk_pct,
+        )
+
+        bundle = load_backtest_data(a, timeframe, test_start, test_end, cfg, warmup)
+        if not bundle.is_valid:
+            if output == "table":
+                console.print(f"  [yellow]Insufficient data — skipping[/yellow]")
+            cursor += relativedelta(months=step_months)
+            continue
+
+        result = run_backtest(bundle, cfg, bt_cfg)
+        m = result.metrics
+
+        window_summary = {
+            "test_start": test_start.date().isoformat(),
+            "test_end": test_end.date().isoformat(),
+            "trades": m.total_trades,
+            "win_rate": round(m.win_rate_pct, 1),
+            "total_return_net": round(m.total_return_net_pct or 0, 2),
+            "sharpe": round(m.sharpe_ratio, 2),
+            "sortino": round(m.sortino_ratio or 0, 2),
+            "max_dd": round(m.max_drawdown_pct, 2),
+            "profit_factor": round(m.profit_factor, 2),
+            "final_equity": result.final_equity or 0,
+        }
+        window_results.append(window_summary)
+
+        if output == "table":
+            console.print(
+                f"  Trades: {window_summary['trades']} | "
+                f"Win: {window_summary['win_rate']}% | "
+                f"Net: {window_summary['total_return_net']}% | "
+                f"Sharpe: {window_summary['sharpe']} | "
+                f"MaxDD: {window_summary['max_dd']}%"
+            )
+
+        cursor += relativedelta(months=step_months)
+
+    # Summary
+    if output == "json":
+        _json_out({"walk_forward": window_results})
+    elif window_results:
+        console.print("\n[bold]Walk-Forward Summary[/bold]")
+        import statistics
+        win_rates = [w["win_rate"] for w in window_results if w["trades"] > 0]
+        sharpes = [w["sharpe"] for w in window_results if w["trades"] > 0]
+        returns = [w["total_return_net"] for w in window_results if w["trades"] > 0]
+
+        if win_rates:
+            console.print(f"  Windows tested: {len(window_results)}")
+            console.print(f"  Avg win rate:   {statistics.mean(win_rates):.1f}% (std: {statistics.stdev(win_rates):.1f}%)" if len(win_rates) > 1 else f"  Avg win rate: {statistics.mean(win_rates):.1f}%")
+            console.print(f"  Avg Sharpe:     {statistics.mean(sharpes):.2f}")
+            console.print(f"  Avg net return: {statistics.mean(returns):.2f}%")
+
+            # Consistency check 
+            profitable_windows = sum(1 for r in returns if r > 0)
+            console.print(f"  Profitable windows: {profitable_windows}/{len(returns)}")
+            if profitable_windows / len(returns) >= 0.6:
+                console.print("  [green]✓ System appears consistent across windows[/green]")
+            else:
+                console.print("  [yellow]⚠ System shows inconsistency — possible overfitting[/yellow]")
+    else:
+        console.print("[yellow]No windows could be tested.[/yellow]")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

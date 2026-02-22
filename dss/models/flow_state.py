@@ -55,6 +55,14 @@ class FlowState(BaseModel):
     exch_netflow_z: Optional[float] = None
     reserve_slope: Optional[float] = None
 
+    # Advanced on-chain analytics (article framework)
+    nvt_signal: Optional[float] = None
+    nvt_zone: Optional[str] = None
+    hash_ribbon_state: Optional[str] = None
+    miner_stress: Optional[bool] = None
+    ssr: Optional[float] = None
+    ssr_zone: Optional[str] = None
+
     # Profit-taking / distribution
     profit_taking_state: ProfitTakingState = ProfitTakingState.NORMAL
     distribution_flag: bool = False
